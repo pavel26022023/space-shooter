@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кораблик и метеориты</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+            background-color: #333;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #restartButton {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: cyan;
+            border: none;
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        #profileButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: green;
+            border: none;
+            padding: 10px 20px;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        #profileModal {
+            display: none;
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -20%);
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+            width: 300px;
+            text-align: center;
+        }
+        #profileModal h2 {
+            margin-bottom: 10px;
+        }
+        #closeProfile {
+            margin-top: 20px;
+            padding: 5px 10px;
+            background-color: green;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="controls">
+    <h3>Управление:</h3>
+    <p><strong>W/A/S/D</strong> - Движение</p>
+    <p><strong>Space</strong> - Стрельба</p>
+</div>
+<button id="restartButton" onclick="restartGame()">Начать заново</button>
+<button id="profileButton" onclick="openProfile()">Профиль</button>
+
+<!-- Профильная модалка -->
+<div id="profileModal">
+    <h2>Статистика профиля</h2>
+    <p>Наигранные часы: <span id="playedHours">0</span> часов</p>
+    <p>Количество сломанных метеоритов: <span id="destroyedMeteors">0</span></p>
+    <p>Рекорд по очкам: <span id="highScore">0</span></p>
+    <button id="closeProfile" onclick="closeProfile()">Закрыть</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth; // На весь экран
+    canvas.height = window.innerHeight; // На весь экран
+
+    const ship = {
+        x: canvas.width / 2,
+        y: canvas.height - 60,
+        width: 50,
+        height: 30,
+        speed: 10 // Скорость корабля
+    };
+
+    let meteors = [];
+    let bullets = [];
+    let score = 0;
+    let highScore = 0;
+    let destroyedMeteors = 0; // Счетчик уничтоженных метеоритов
+    let gameOver = false;
+    let startTime = new Date().getTime(); // Для подсчета наигранных часов
+    let lastShotTime = 0; // Время последнего выстрела
+    const shotCooldown = 400; // Задержка между выстрелами в миллисекундах (0.4 сек)
+
+    function createMeteor() {
+        const size = Math.random() * 30 + 20; // Случайный размер метеорита
+        meteors.push({
+            x: Math.random() * (canvas.width - size),
+            y: 0,
+            width: size,
+            height: size,
+            speed: Math.random() * 2 + 2 // Скорость метеорита
+        });
+    }
+
+    function drawShip() {
+        ctx.fillStyle = 'cyan';
+        ctx.fillRect(ship.x, ship.y, ship.width, ship.height);
+    }
+
+    function drawMeteors() {
+        ctx.fillStyle = 'red';
+        meteors.forEach(meteor => {
+            ctx.fillRect(meteor.x, meteor.y, meteor.width, meteor.height);
+        });
+    }
+
+    function drawBullets() {
+        ctx.fillStyle = 'yellow';
+        bullets.forEach(bullet => {
+            ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+        });
+    }
+
+    function updateMeteors() {
+        meteors.forEach(meteor => {
+            meteor.y += meteor.speed;
+        });
+        meteors = meteors.filter(meteor => meteor.y < canvas.height); // Удалить метеориты, которые вышли за пределы экрана
+    }
+
+    function updateBullets() {
+        bullets.forEach(bullet => {
+            bullet.y -= bullet.speed; // Пуля движется вверх
+        });
+        bullets = bullets.filter(bullet => bullet.y > 0); // Удалить пули, которые вышли за пределы экрана
+    }
+
+    function checkCollision() {
+        for (let meteor of meteors) {
+            if (ship.x < meteor.x + meteor.width &&
+                ship.x + ship.width > meteor.x &&
+                ship.y < meteor.y + meteor.height &&
+                ship.y + ship.height > meteor.y) {
+                gameOver = true;
+            }
+        }
+    }
+
+    function checkBulletCollision() {
+        bullets.forEach((bullet, bulletIndex) => {
+            meteors.forEach((meteor, meteorIndex) => {
+                if (bullet.x < meteor.x + meteor.width &&
+                    bullet.x + bullet.width > meteor.x &&
+                    bullet.y < meteor.y + meteor.height &&
+                    bullet.y + bullet.height > meteor.y) {
+                    // Уничтожить метеорит и пулю
+                    meteors.splice(meteorIndex, 1);
+                    bullets.splice(bulletIndex, 1);
+                    score += 10; // Увеличиваем счет за уничтожение метеорита
+                    destroyedMeteors++; // Увеличить счетчик сломанных метеоритов
+                    updateProfileStats(); // Обновляем статистику в профиле
+                }
+            });
+        });
+    }
+
+    function drawScore() {
+        ctx.fillStyle = 'white';
+        ctx.font = '20px Arial';
+        ctx.fillText('Счет: ' + score, 10, 20);
+    }
+
+    function gameLoop() {
+        if (gameOver) {
+            document.getElementById('restartButton').style.display = 'block';
+            highScore = Math.max(highScore, score); // Обновить рекорд
+            updateProfileStats();
+            return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawShip();
+        drawMeteors();
+        drawBullets();
+        drawScore();
+
+        updateMeteors();
+        updateBullets();
+        checkCollision();
+        checkBulletCollision(); // Проверяем столкновения пуль с метеоритами
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    const keys = {}; // Объект для отслеживания нажатых клавиш
+
+    document.addEventListener('keydown', event => {
+        keys[event.key] = true; // Регистрируем нажатие клавиши
+    });
+
+    document.addEventListener('keyup', event => {
+        keys[event.key] = false; // Регистрируем отпускание клавиши
+    });
+
+    function moveShip() {
+        if (keys['w'] || keys['ц'] || keys['W'] || keys['Ц']) {
+            if (ship.y > 0) ship.y -= ship.speed;
+        }
+        if (keys['a'] || keys['ф'] || keys['A'] || keys['Ф']) {
+            if (ship.x > 0) ship.x -= ship.speed;
+        }
+        if (keys['s'] || keys['ы'] || keys['S'] || keys['Ы']) {
+            if (ship.y < canvas.height - ship.height) ship.y += ship.speed;
+        }
+        if (keys['d'] || keys['в'] || keys['D'] || keys['В']) {
+            if (ship.x < canvas.width - ship.width) ship.x += ship.speed;
+        }
+    }
+
+    function shoot() {
+        const currentTime = new Date().getTime(); // Текущее время
+        if (currentTime - lastShotTime >= shotCooldown) { // Проверка на задержку между выстрелами
+            bullets.push({
+                x: ship.x + ship.width / 2 - 2.5, // Центр пули
+                y: ship.y,
+                width: 5,
+                height: 10,
+                speed: 5
+            });
+            lastShotTime = currentTime; // Обновить время последнего выстрела
+        }
+    }
+
+    function restartGame() {
+        ship.x = canvas.width / 2;
+        ship.y = canvas.height - 60;
+        meteors = [];
+        bullets = [];
+        score = 0;
+        gameOver = false;
+        document.getElementById('restartButton').style.display = 'none';
+        gameLoop(); // Запускаем игру
+    }
+
+    function gameEngine() {
+        moveShip();
+        if (keys[' '] && !gameOver) {
+            shoot(); // Стрельба по пробелу
+        }
+    }
+
+    setInterval(gameEngine, 16); // Запустить игровой движок с обновлением каждые 16 мс
+    setInterval(createMeteor, 500); // Создаем метеориты каждые 500 мс
+    gameLoop(); // Запускаем игру
+
+    // --- Функции для профиля ---
+
+    function updateProfileStats() {
+        document.getElementById('destroyedMeteors').innerText = destroyedMeteors;
+        document.getElementById('highScore').innerText = highScore;
+        const hoursPlayed = ((new Date().getTime() - startTime) / 1000 / 60 / 60).toFixed(2); // Переводим в часы
+        document.getElementById('playedHours').innerText = hoursPlayed;
+    }
+
+    function openProfile() {
+        updateProfileStats(); // Обновляем статистику перед открытием
+        document.getElementById('profileModal').style.display = 'block';
+    }
+
+    function closeProfile() {
+        document.getElementById('profileModal').style.display = 'none';
+    }
+
+</script>
+
+</body>
+</html>
